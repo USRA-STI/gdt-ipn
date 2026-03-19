@@ -157,18 +157,18 @@ class Ipn(Localization):
             src_interval (tuple): the source interval time selection
             max_offset (float): the maximum time offset considered
         """
-        src_length = self._src1[1] - self._src1[0]
         start_needed = self._src1[0] - max_offset
-        stop_needed = self._src1[0] + max_offset + src_length
-
+        stop_needed = self._src1[1] + max_offset
+        
         if self._switch == True:
             lc = 1
         else:
             lc = 2
-        if self._times2[0] > start_needed or self._times2[-1] < stop_needed:
+
+        if self._times2[0] > start_needed or (self._times2[-1] + self._dt2) < stop_needed:
             raise ValueError("For max offset and chosen source selection, " \
                 "Lightcurve{} needs T0{:.3f}:T0+{:.3f} s of data".format(
-                lc, start_needed, stop_needed))
+                lc, start_needed, stop_needed+self._dt2))
         return
     
     def _get_background_subtracted_lightcurves(self, lc1_full, lc2_full):
@@ -289,7 +289,7 @@ class Ipn(Localization):
                                     self._counts1, self._counts2)
         counts2 = self._counts2 * scale
         err2 = self._err2 * scale ** 2
- 
+      
         # slice lightcurve 1 so that it only includes source region
         mask = (self._times1 >= self._src1[0]) & (self._times1 <= self._src1[1])
         self._times1_cut = self._times1[mask]
@@ -309,7 +309,7 @@ class Ipn(Localization):
         self._dts = shift_array * self._dt2
         self._dt_min = self._dts[np.argmin(self._chi2)]
         self._dt_lo, self._dt_hi = self.chi2_confidence_interval(
-            sigma=3., dof=len(self._counts1_cut[:-1]))
+            sigma=3., dof=len(self._counts1_cut))
         self._time_offset = TimeUncertainty(
             self._dt_min, (self._dt_min-self._dt_lo, self._dt_hi-self._dt_min))
         return
@@ -336,24 +336,24 @@ class Ipn(Localization):
             start = self._times1_cut[0] + (shift * self._dt2)
             end = start + (src[1] - src[0])
 
-            # first account for differences in time resolution
+            # set up mask for lightcurve with equal or higher time resolution
             start_mask = (self._times2 >= start - self._dt2) & (self._times2 < start + self._dt2)
             start_times = self._times2[start_mask]
             start_idx = np.argmin([np.abs(s-start) for s in self._times2[start_mask]])
             start = start_times[start_idx]
-
+           
             # slice lightcurve 2
             mask = (self._times2 >= start) & (self._times2 < end + self._dt2) # take lo_edges + 1
             times2 = self._times2[mask]
             counts2_tmp = counts2[mask]
             err2_tmp = err2[mask]
             
-            # define the new bin edges for lightcurve 2
-            cum_diff = np.cumsum(np.diff(self._times1_cut))
-            hi_bin_edges = [times2[0] + d for d in np.cumsum(np.diff(self._times1_cut))]
+            # make new bin edges for lightcurve 2
+            cum_diff = np.cumsum([self._dt1] * len(self._times1_cut))
+            hi_bin_edges = [times2[0] + d for d in cum_diff]
             new_bin_edges = np.insert(hi_bin_edges, 0, times2[0])
             new_bin_edges = [np.round(e, 10) for e in new_bin_edges]
-       
+
             # bin lightcurve 2 to match lightcurve 1
             rebinned_counts2 = []
             rebinned_err2 = []
@@ -369,12 +369,12 @@ class Ipn(Localization):
                 self.plot_shift(shift, rebinned_counts2)
         
             # calculate the chi2 and ccf
-            x2 = self.chisq(self._counts1_cut[:-1], rebinned_counts2, 
-                    variance1=self._err1_cut[:-1], variance2=rebinned_err2,
-                    dof=len(rebinned_counts2)-1)
+            x2 = self.chisq(self._counts1_cut, rebinned_counts2,
+                    variance1=self._err1_cut, variance2=rebinned_err2,
+                    dof=len(rebinned_counts2))
             chisq.append(x2)
-            ccf.append(self.ccf(self._counts1_cut[:-1], rebinned_counts2, 
-                       variance1=self._err1_cut[:-1], variance2=rebinned_err2))
+            ccf.append(self.ccf(self._counts1_cut, rebinned_counts2,
+                       variance1=self._err1_cut, variance2=rebinned_err2))
         return chisq, ccf
 
     def chisq(self, counts1, counts2, variance1=None, variance2=None, dof=1):
@@ -428,11 +428,17 @@ class Ipn(Localization):
         Returns:
             (float, float): the lower and upper time lag uncertainties
         """
+        # subtract 1 from DOF
+        ndof = dof - 1
+        if ndof < 1:
+            raise ValueError('Number of degrees of freedom cannot be less than 1.' \
+                                ' Widen the source interval to include more bins.') 
+
         # Calculate threshold chi-squared value (reduced chi^2)
         p_0 = stats.norm.cdf(sigma) - stats.norm.cdf(-sigma)
-        self._chi2_lim = stats.chi2.ppf(p_0, dof - 1) / (dof - 1) - 1 + min(self._chi2)
+        self._chi2_lim = stats.chi2.ppf(p_0, ndof) / ndof + min(self._chi2) - 1
         chisq_lim_idx = np.where(self._chi2 <= self._chi2_lim)[0]
-    
+
         # Find the indices of the upper and lower dT limits 
         if len(chisq_lim_idx) == len(self._chi2):
             idx_lo = chisq_lim_idx[0]
@@ -478,19 +484,21 @@ class Ipn(Localization):
         """
         plt.figure(figsize=(8, 5))
 
-        # stationary lightcurve 1
+        # add the last hi edge
         times1 = np.append(self._times1, self._times1[-1] + self._dt1)
+        times1_cut = np.append(self._times1_cut, self._times1_cut[-1] + self._dt1)
+        
+        # stationary lightcurve 1
         plt.stairs(self._counts1, times1, color='lightsteelblue') 
-        plt.stairs(self._counts1_cut[:-1], self._times1_cut, 
-            color='C0', linewidth=2, label='Lightcurve 1')
-
+        plt.stairs(self._counts1_cut, times1_cut, color='C0', 
+                    linewidth=2, label='Lightcurve 1')
         # shifted lightcurve 2
-        plt.stairs(new_counts, self._times1_cut, 
-            color='C1', linewidth=2, label='Lightcurve 2 (rebinned)')
+        plt.stairs(new_counts, times1_cut, 
+                    color='C1', linewidth=2, label='Lightcurve 2 (rebinned)')
 
         # styling
-        plt.xlim(left=self._times1_cut[0] - 10 * self._dt1,
-                 right=self._times1_cut[-1] + 10 * self._dt1)
+        plt.xlim(left=times1_cut[0] - 10 * self._dt1,
+                 right=times1_cut[-1] + 10 * self._dt1)
         shift_time = np.round(i_shift * self._dt2, 5)
         plt.title('Shift {} ({:.4f}) s'.format(i_shift, shift_time))
         plt.xlabel('Time (s)')
