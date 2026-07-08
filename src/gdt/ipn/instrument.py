@@ -551,48 +551,81 @@ class Spacecraft:
 
         return SpacecraftFrame(**kwargs)
 
-    def barycentric_position(self, obstime):
-        """Return the spacecraft position in solar-system barycentric
-        coordinates.
+    def barycentric_position(self, obstime, vel_vec=None, ref_time=None):
+        """Return the spacecraft's solar-system barycentric position.
 
-        The stored spacecraft position is assumed to be geocentric. This
-        method adds the Earth's barycentric position at the requested epoch,
-        evaluated in TDB, to produce a barycentric Cartesian position in an
-        ICRS-aligned frame.
+        Adds Earth's barycentric position at ``obstime`` to the stored
+        geocentric position vector.  If ``vel_vec`` and ``ref_time`` are
+        given, the stored position is first propagated by
+        ``vel_vec * (obstime - ref_time)`` to account for the
+        spacecraft's own motion between the reference epoch and ``obstime``.
+        Without those arguments the behaviour is unchanged from the original.
 
         Args:
-            obstime (astropy.time.Time or compatible): The observation time.
+            obstime (astropy.time.Time): Observation time.
+            vel_vec (array-like, optional): Geocentric velocity [vx, vy, vz]
+                in km/s.  Must be paired with ``ref_time``.
+            ref_time (astropy.time.Time, optional): Epoch at which the stored
+                geocentric position is valid.  Must be paired with
+                ``vel_vec``.
 
         Returns:
             :class:`SpacecraftPosition`
+
+        Raises:
+            ValueError: If only one of ``vel_vec`` / ``ref_time`` is given.
         """
+        if (vel_vec is None) != (ref_time is None):
+            raise ValueError(
+                'vel_vec and ref_time must both be provided or both omitted')
+
         if not isinstance(obstime, Time):
             obstime = Time(obstime)
 
         pos_unit = u.Unit(self.position.unit)
+        pos_vec = self.position.vector.copy()
+
+        if vel_vec is not None:
+            if not isinstance(ref_time, Time):
+                ref_time = Time(ref_time)
+            dt_s = (obstime - ref_time).to(u.s).value
+            # convert km/s velocity to the stored position unit
+            vel_in_unit = (np.asarray(vel_vec, dtype=float)
+                           * (u.km / u.s).to(pos_unit / u.s))
+            pos_vec = pos_vec + vel_in_unit * dt_s
+
         earth_bary = a_coords.get_body_barycentric('earth', obstime.tdb)
-        bary_vec = earth_bary.xyz.to(pos_unit).value + self.position.vector
+        bary_vec = earth_bary.xyz.to(pos_unit).value + pos_vec
 
         return SpacecraftPosition.from_vectors(bary_vec,
                                                self.position.vector_err,
                                                unit=self.position.unit)
 
     def baseline_to(self, other, obstime=None, other_obstime=None,
-                    barycentric=False):
+                    barycentric=False,
+                    vel_vec=None, other_vel_vec=None,
+                    ref_time=None):
         """Return the baseline direction from ``other`` to this spacecraft.
 
         Args:
             other (:class:`Spacecraft`): The other spacecraft.
-            obstime (astropy.time.Time, optional): The time for this
-                spacecraft. Required when ``barycentric=True``.
-            other_obstime (astropy.time.Time, optional): The time for the
-                other spacecraft. If omitted while ``barycentric=True``, the
-                same time as ``obstime`` is used.
-            barycentric (bool, optional): If True, compute the baseline from
-                barycentric positions evaluated at the provided times.
+            obstime (astropy.time.Time, optional): Burst arrival time at this
+                spacecraft.  Required when ``barycentric=True``.
+            other_obstime (astropy.time.Time, optional): Burst arrival time at
+                ``other``.  Defaults to ``obstime`` when omitted.
+            barycentric (bool, optional): Compute baseline from barycentric
+                positions.  Default is False.
+            vel_vec (array-like, optional): Geocentric velocity [vx, vy, vz]
+                in km/s for *this* spacecraft.  Passed to
+                :meth:`barycentric_position` with ``ref_time``.
+            other_vel_vec (array-like, optional): Same as ``vel_vec``
+                but for ``other``.
+            ref_time (astropy.time.Time, optional): Reference epoch for the
+                stored geocentric positions.  Required when either velocity
+                argument is given.
 
         Returns:
-            (float, float): The baseline RA and Dec in radians.
+            (float, float): Baseline RA and Dec in radians.
         """
         if not isinstance(other, Spacecraft):
             raise TypeError("other must be of class 'Spacecraft'")
@@ -602,8 +635,14 @@ class Spacecraft:
                 raise ValueError('obstime must be provided when barycentric=True')
             if other_obstime is None:
                 other_obstime = obstime
-            this_pos = self.barycentric_position(obstime)
-            other_pos = other.barycentric_position(other_obstime)
+            this_pos = self.barycentric_position(
+                obstime,
+                vel_vec=vel_vec,
+                ref_time=ref_time if vel_vec is not None else None)
+            other_pos = other.barycentric_position(
+                other_obstime,
+                vel_vec=other_vel_vec,
+                ref_time=ref_time if other_vel_vec is not None else None)
         else:
             this_pos = self.position
             other_pos = other.position

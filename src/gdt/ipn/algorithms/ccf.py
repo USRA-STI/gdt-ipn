@@ -457,7 +457,8 @@ class Ipn(Localization):
         return self._dts[idx_lo], self._dts[idx_hi]
 
     def get_healpix(self, nside=2048, obstime=None, other_obstime=None,
-                    barycentric=False):
+                    barycentric=False, vel_vec=None, other_vel_vec=None,
+                    ref_time=None):
         """Return the localization as a HealPix object.
 
         Args:
@@ -470,6 +471,15 @@ class Ipn(Localization):
             barycentric (bool, optional): If True, rebuild the annulus from
                 barycentric spacecraft positions evaluated at the supplied
                 times.
+            vel_vec (array-like, optional): Geocentric velocity [vx, vy, vz]
+                in km/s for the first spacecraft.  Passed to
+                :meth:`barycentric_position`; ``ref_time`` must also be
+                supplied when this is given.
+            other_vel_vec (array-like, optional): Same as ``vel_vec`` for the
+                second spacecraft.
+            ref_time (astropy.time.Time, optional): Reference epoch for the
+                velocity extrapolation.  Required when either velocity vector
+                is given.
 
         Returns:
             (:class:`HealPixLocalization`)
@@ -486,14 +496,22 @@ class Ipn(Localization):
 
             spacecraft = [
                 Spacecraft(
-                    self._spacecraft[0].barycentric_position(obstime),
+                    self._spacecraft[0].barycentric_position(
+                        obstime,
+                        vel_vec=vel_vec,
+                        ref_time=ref_time if vel_vec is not None else None,
+                    ),
                     observation=self._spacecraft[0].observation,
                     time_uncert=self._spacecraft[0].time_uncert.err,
                     dist_units=self._spacecraft[0].position.unit,
                     time_units=self._spacecraft[0].time_uncert.unit,
                 ),
                 Spacecraft(
-                    self._spacecraft[1].barycentric_position(other_obstime),
+                    self._spacecraft[1].barycentric_position(
+                        other_obstime,
+                        vel_vec=other_vel_vec,
+                        ref_time=ref_time if other_vel_vec is not None else None,
+                    ),
                     observation=self._spacecraft[1].observation,
                     time_uncert=self._spacecraft[1].time_uncert.err,
                     dist_units=self._spacecraft[1].position.unit,

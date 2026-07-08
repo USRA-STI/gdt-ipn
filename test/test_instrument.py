@@ -298,6 +298,54 @@ class TestSpacecraft(TestCase):
             self.assertFalse(np.isnan(dec_bary))
             self.assertGreater(abs(ra_bary) + abs(dec_bary), 1e-6)
 
+        def test_barycentric_position_with_velocity(self):
+            # velocity extrapolation: position should shift by vel_vec * (obstime - ref_time)
+            obstime  = Time('2024-01-01T00:00:10', scale='utc')
+            ref_time = Time('2024-01-01T00:00:00', scale='utc')  # 10 s before obstime
+            vel_vec  = [1.0, 2.0, 3.0]  # km/s
+
+            bary_no_vel = self.sc1.barycentric_position(obstime)
+            bary_vel    = self.sc1.barycentric_position(obstime,
+                                                        vel_vec=vel_vec,
+                                                        ref_time=ref_time)
+
+            dt = (obstime - ref_time).to_value('s')  # 10 s
+            expected_shift = np.array(vel_vec) * dt   # [10, 20, 30] km
+            np.testing.assert_allclose(
+                bary_vel.vector - bary_no_vel.vector,
+                expected_shift,
+                atol=1e-3)
+
+        def test_barycentric_position_with_velocity_zero_dt(self):
+            # when ref_time == obstime the velocity correction must be exactly zero
+            obstime = Time('2024-01-01T00:00:00', scale='utc')
+            bary_no_vel = self.sc1.barycentric_position(obstime)
+            bary_vel    = self.sc1.barycentric_position(obstime,
+                                                        vel_vec=[100.0, 200.0, 300.0],
+                                                        ref_time=obstime)
+            np.testing.assert_allclose(bary_vel.vector, bary_no_vel.vector, atol=1e-10)
+
+        def test_baseline_to_with_velocity_shifts_direction(self):
+            # applying a non-zero other_vel_vec must change the barycentric baseline direction
+            sc_a = Spacecraft(SpacecraftPosition.from_vectors((7000.0, 0.0, 0.0),
+                                                              (0.0, 0.0, 0.0),
+                                                              unit='km'))
+            sc_b = Spacecraft(SpacecraftPosition.from_vectors((-7000.0, 0.0, 0.0),
+                                                              (0.0, 0.0, 0.0),
+                                                              unit='km'))
+            obstime       = Time('2024-01-01T00:00:00', scale='utc')
+            other_obstime = Time('2024-01-01T00:00:01', scale='utc')
+
+            ra_bary, dec_bary = sc_a.baseline_to(
+                sc_b, obstime=obstime, other_obstime=other_obstime, barycentric=True)
+            ra_vel, dec_vel = sc_a.baseline_to(
+                sc_b, obstime=obstime, other_obstime=other_obstime, barycentric=True,
+                other_vel_vec=[0.0, 1000.0, 0.0], ref_time=obstime)
+
+            # the baseline direction must be different when a large transverse velocity is added
+            sep = abs(ra_vel - ra_bary) + abs(dec_vel - dec_bary)
+            self.assertGreater(sep, 1e-6)
+
         def test_barycentric_common_reference_preserves_baseline(self):
             obstime = Time('2024-01-01T00:00:00', scale='utc')
             earth_ref = a_coords.get_body_barycentric('earth', obstime.tdb)
