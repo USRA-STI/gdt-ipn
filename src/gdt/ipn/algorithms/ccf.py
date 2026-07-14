@@ -156,20 +156,28 @@ class Ipn(Localization):
         Args:
             src_interval (tuple): the source interval time selection
             max_offset (float): the maximum time offset considered
+
+        Returns:
+            boolean
         """
+        # set bounds of light travel time
         start_needed = self._src1[0] - max_offset
         stop_needed = self._src1[1] + max_offset
-        
+
+        # track which lightcurve was switched
         if self._switch == True:
             lc = 1
         else:
             lc = 2
 
         if self._times2[0] > start_needed or (self._times2[-1] + self._dt2) < stop_needed:
-            raise ValueError("For max offset and chosen source selection, " \
-                "Lightcurve{} needs T0{:.3f}:T0+{:.3f} s of data".format(
-                lc, start_needed, stop_needed+self._dt2))
-        return
+            warnings.warn(
+                "To calculate CCF over +/- the light travel time between " \
+                "instruments, Lightcurve{} needs T0{:.3f}:T0+{:.3f} s of " \
+                "data. Will calculate CCF on shorter interval provided by" \
+                " data files.".format(lc, start_needed, stop_needed+self._dt2))
+            return True
+        return False
     
     def _get_background_subtracted_lightcurves(self, lc1_full, lc2_full):
         """Try to subtract background; fall back to full lightcurves if needed
@@ -235,12 +243,27 @@ class Ipn(Localization):
             self._switch = False
         return
 
-    def _shift_array(self, max_dt):
+    def _shift_array(self, max_dt, segment=False):
         """Create lightcurve shift array
         """
         num_shifts = int(np.abs(max_dt) / min(self._dt1, self._dt2))
         shift_array = np.arange(num_shifts, dtype=int)
-        return np.concatenate((shift_array - num_shifts, [0], shift_array + 1))
+        shift_array = np.concatenate((shift_array - num_shifts, [0], shift_array + 1))
+        if segment is not False:
+            return self._mask_shift_array(shift_array, max_dt)
+        return shift_array
+
+    def _mask_shift_array(self, shift_array, max_dt):
+        shift_starts = shift_array * self._dt2 + self._times1_cut[0]
+        shift_ends = shift_array * self._dt2 + self._times1_cut[1]
+
+        start_time = [self._times2[0] if self._times2[0] >= -max_dt else -max_dt][0]
+        end_time = [self._times2[-1] if self._times2[-1] <= max_dt else max_dt][0]
+        end_time -= (self._times1_cut[-1] - self._times1_cut[0])
+     
+        mask_lo = (shift_starts >= start_time)
+        mask_hi = (shift_ends <= end_time)
+        return shift_array[mask_lo & mask_hi]
 
     def _scale_factor(self, src1, src2, times1, times2, counts1, counts2):
         """The normalization between lightcurves from instruments 
@@ -280,7 +303,7 @@ class Ipn(Localization):
             max_dt = self.max_time_offset()[0]
         
         # check lightcurve 2 length
-        self._validate_lightcurve_length(max_dt)
+        segment = self._validate_lightcurve_length(max_dt)
 
         # calculate scale over selection of background-subtracted lightcurve 
         # and apply to source+background lightcurves
@@ -296,12 +319,14 @@ class Ipn(Localization):
         self._counts1_cut = self._counts1[mask]
         self._err1_cut = self._err1[mask]
 
+        # create shift array
+        shift_array = self._shift_array(max_dt, segment=segment)
+      
         # shift lightcurves
-        shift_array = self._shift_array(max_dt)
         self._chi2, self._ccf = self.shift(
             shift_array, self._src1, counts2, err2, plot=plot)
 
-        if self._switch is not False:
+        if self._switch is not False and segment is False:
             self._chi2 = self._chi2[::-1]
             self._ccf = self._ccf[::-1]
 
@@ -332,10 +357,11 @@ class Ipn(Localization):
         """
         chisq = []
         ccf = []
+
         for i, shift in enumerate(shift_array):
             start = self._times1_cut[0] + (shift * self._dt2)
             end = start + (src[1] - src[0])
-
+            
             # set up mask for lightcurve with equal or higher time resolution
             start_mask = (self._times2 >= start - self._dt2) & (self._times2 < start + self._dt2)
             start_times = self._times2[start_mask]
