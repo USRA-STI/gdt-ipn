@@ -132,8 +132,9 @@ class Annulus:
         Returns:
             (float): The annulus radius
         """
-        distance = self._sc1.position.distance(self._sc2.position, sign=True)
-        theta = np.arccos(self._c*self._time_offset.dt/distance)
+        distance = self._sc1.position.distance(self._sc2.position)
+        cos_theta = -self._c * self._time_offset.dt / distance
+        theta = np.arccos(np.clip(cos_theta, -1.0, 1.0))
         if deg:
             theta = np.rad2deg(theta)
         return theta

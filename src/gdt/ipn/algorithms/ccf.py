@@ -482,18 +482,72 @@ class Ipn(Localization):
         # Get time lag values 
         return self._dts[idx_lo], self._dts[idx_hi]
 
-    def get_healpix(self, nside=2048):
-        """Return the localization as HealPix object
-        
+    def get_healpix(self, nside=2048, obstime=None, other_obstime=None,
+                    barycentric=False, vel_vec=None, other_vel_vec=None,
+                    ref_time=None):
+        """Return the localization as a HealPix object.
+
+        Args:
+            nside (int, optional): The HEALPix map resolution.
+            obstime (astropy.time.Time, optional): Evaluation time for the
+                first spacecraft when ``barycentric=True``.
+            other_obstime (astropy.time.Time, optional): Evaluation time for
+                the second spacecraft when ``barycentric=True``. If omitted,
+                ``obstime`` is used for both spacecraft.
+            barycentric (bool, optional): If True, rebuild the annulus from
+                barycentric spacecraft positions evaluated at the supplied
+                times.
+            vel_vec (array-like, optional): Geocentric velocity [vx, vy, vz]
+                in km/s for the first spacecraft.  Passed to
+                :meth:`barycentric_position`; ``ref_time`` must also be
+                supplied when this is given.
+            other_vel_vec (array-like, optional): Same as ``vel_vec`` for the
+                second spacecraft.
+            ref_time (astropy.time.Time, optional): Reference epoch for the
+                velocity extrapolation.  Required when either velocity vector
+                is given.
+
         Returns:
             (:class:`HealPixLocalization`)
         """
         if self.time_offset is None:
             raise RuntimeError('Localization has not yet been performed')
 
-        annulus = Annulus(*self._spacecraft, self._time_offset)
+        spacecraft = self._spacecraft
+        if barycentric:
+            if obstime is None:
+                raise ValueError('obstime must be provided when barycentric=True')
+            if other_obstime is None:
+                other_obstime = obstime
+
+            spacecraft = [
+                Spacecraft(
+                    self._spacecraft[0].barycentric_position(
+                        obstime,
+                        vel_vec=vel_vec,
+                        ref_time=ref_time if vel_vec is not None else None,
+                    ),
+                    observation=self._spacecraft[0].observation,
+                    time_uncert=self._spacecraft[0].time_uncert.err,
+                    dist_units=self._spacecraft[0].position.unit,
+                    time_units=self._spacecraft[0].time_uncert.unit,
+                ),
+                Spacecraft(
+                    self._spacecraft[1].barycentric_position(
+                        other_obstime,
+                        vel_vec=other_vel_vec,
+                        ref_time=ref_time if other_vel_vec is not None else None,
+                    ),
+                    observation=self._spacecraft[1].observation,
+                    time_uncert=self._spacecraft[1].time_uncert.err,
+                    dist_units=self._spacecraft[1].position.unit,
+                    time_units=self._spacecraft[1].time_uncert.unit,
+                ),
+            ]
+
+        annulus = Annulus(*spacecraft, self._time_offset)
         return IpnHealPixLocalization.from_annulus(
-            *annulus.center(), annulus.radius(), 
+            *annulus.center(), annulus.radius(),
             annulus.total_width(), nside=nside
         )
 
