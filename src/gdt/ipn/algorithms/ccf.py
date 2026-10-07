@@ -135,8 +135,8 @@ class Ipn(Localization):
         Returns:
             (float): maximum light travel time
         """
-        return self._spacecraft[0].position.light_travel_time( \
-                                                self._spacecraft[1].position)
+        return np.abs(self._spacecraft[0].position.light_travel_time( \
+                                                self._spacecraft[1].position))
 
     def _set_lightcurves(self, src1, src2):
         """Set up the lightcurves for cross-correlation."""
@@ -545,7 +545,7 @@ class Ipn(Localization):
                 ),
             ]
 
-        annulus = Annulus(*spacecraft, self._time_offset)
+        annulus = Annulus(spacecraft[1], spacecraft[0], self._time_offset)
         return IpnHealPixLocalization.from_annulus(
             *annulus.center(), annulus.radius(),
             annulus.total_width(), nside=nside
@@ -588,7 +588,7 @@ class Ipn(Localization):
         plt.close()
         return
 
-    def plot_fit(self):
+    def plot_fit(self, show=False):
         """Produce a plot of the chi-squared and 
         cross-correlation statistics
         """
@@ -605,7 +605,8 @@ class Ipn(Localization):
         ax2.axvline(x=self._dt_min, color='grey', linestyle='--')
         ax2.set_ylabel('Reduced Chi-Squared', fontsize=12, color='C1')
         fig.tight_layout()
-        plt.show()
+        if show is not False:
+            plt.show()
         plt.close()
         return
         
