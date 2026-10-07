@@ -228,11 +228,7 @@ class SpacecraftPosition:
 
         vector = self.vector - other_position.vector
 
-        if sign is not False:
-            dsign = np.sign(np.arctan2(vector[1], vector[0]))
-            return np.linalg.norm(vector) * dsign
-        else:
-            return np.linalg.norm(vector)
+        return np.linalg.norm(vector)
 
     def distance_uncertainty(self, other_position):
         """The uncertainty in the distance between this spacecraft and another
