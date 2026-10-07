@@ -210,7 +210,7 @@ class SpacecraftPosition:
         cls = type(self)
         return cls.from_vectors(new_vec, new_vec_err, unit=unit)
 
-    def distance(self, other_positio):
+    def distance(self, other_position):
         """The distance between this spacecraft and another spacecraft.
 
         Args:
