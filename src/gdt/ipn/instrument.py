@@ -210,14 +210,12 @@ class SpacecraftPosition:
         cls = type(self)
         return cls.from_vectors(new_vec, new_vec_err, unit=unit)
 
-    def distance(self, other_position, sign=False):
+    def distance(self, other_positio):
         """The distance between this spacecraft and another spacecraft.
 
         Args:
             other_position (:class:`SpacecraftPosition`): The other spacecraft
                                                           position
-            sign (Boolean): whether or not to include vector directionality 
-                in the distance
 
         Returns:
             (float): The distance in this object's units
