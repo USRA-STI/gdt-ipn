@@ -210,14 +210,12 @@ class SpacecraftPosition:
         cls = type(self)
         return cls.from_vectors(new_vec, new_vec_err, unit=unit)
 
-    def distance(self, other_position, sign=False):
+    def distance(self, other_position):
         """The distance between this spacecraft and another spacecraft.
 
         Args:
             other_position (:class:`SpacecraftPosition`): The other spacecraft
                                                           position
-            sign (Boolean): whether or not to include vector directionality 
-                in the distance
 
         Returns:
             (float): The distance in this object's units
@@ -228,11 +226,7 @@ class SpacecraftPosition:
 
         vector = self.vector - other_position.vector
 
-        if sign is not False:
-            dsign = np.sign(np.arctan2(vector[1], vector[0]))
-            return np.linalg.norm(vector) * dsign
-        else:
-            return np.linalg.norm(vector)
+        return np.linalg.norm(vector)
 
     def distance_uncertainty(self, other_position):
         """The uncertainty in the distance between this spacecraft and another
