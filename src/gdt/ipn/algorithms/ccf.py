@@ -598,23 +598,33 @@ class Ipn(Localization):
         plt.close()
         return
 
-    def plot_fit(self, show=False):
+    def plot_fit(self, show=False, save=False, filename=None):
         """Produce a plot of the chi-squared and 
         cross-correlation statistics
         """
         fig, ax1 = plt.subplots(figsize=(7, 4))
         ax1.axvspan(self._dt_lo, self._dt_hi, color='grey', alpha=0.50)
-        ax1.plot(self._dts, self._ccf, color='C0', marker='o')
+        ax1.plot(self._dts, self._ccf, color='C0', marker='o', markersize=4)
         ax1.plot(self._dts, self._ccf, color='C0', linestyle='--')
         ax1.set_xlabel('Time lag [s]', fontsize=12)
         ax1.set_ylabel('Cross-Correlation Function', fontsize=12, color='C0')
         
         ax2 = ax1.twinx()
-        ax2.plot(self._dts, self._chi2, color='C1', marker='o')
+        ax2.plot(self._dts, self._chi2, color='C1', marker='o', markersize=4)
         ax2.plot(self._dts, self._chi2, color='C1')
-        ax2.axvline(x=self._dt_min, color='grey', linestyle='--')
+        ax2.axhline(y=self._chi2_lim, color='red', linestyle='--', linewidth=1., label='Chi2 Limit')
+        ax2.axvline(x=self._dt_min, color='grey', linestyle='--', linewidth=1.)
         ax2.set_ylabel('Reduced Chi-Squared', fontsize=12, color='C1')
+        plt.title(r"Time Offset $\Delta$t = {:.3f} (-{:.3f}/+{:.3f}) s".format(
+            self._dt_min, self._dt_min-self._dt_lo, self._dt_hi-self._dt_min)
+        )
+        plt.legend(loc='upper right')
         fig.tight_layout()
+        if save is not False:
+            if filename is not None:
+                plt.savefig("{}".format(filename), dpi=300)
+            else:
+                plt.savefig("ccf.png", dpi=300)
         if show is not False:
             plt.show()
         plt.close()
