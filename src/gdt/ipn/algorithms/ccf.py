@@ -463,21 +463,31 @@ class Ipn(Localization):
         # Calculate threshold chi-squared value (reduced chi^2)
         p_0 = stats.norm.cdf(sigma) - stats.norm.cdf(-sigma)
         self._chi2_lim = stats.chi2.ppf(p_0, ndof) / ndof + min(self._chi2) - 1
-        chisq_lim_idx = np.where(self._chi2 <= self._chi2_lim)[0]
+        chi2_mask = [self._chi2 <= self._chi2_lim][0]
 
-        # Find the indices of the upper and lower dT limits 
-        if len(chisq_lim_idx) == len(self._chi2):
-            idx_lo = chisq_lim_idx[0]
-            idx_hi = chisq_lim_idx[-1]
+        # search lower CI
+        chi2_min_idx = np.argmin(self._chi2)
+        lower_ci_mask = chi2_mask[:chi2_min_idx]
+        # if all values are False take the time offset right before the min
+        if np.all(~lower_ci_mask) == True:
+            idx_lo = chi2_min_idx - 1
+        # else if all values are True, take the first chi2 in the array
+        elif np.all(lower_ci_mask) == True:
+            idx_lo = 0
+            warnings.warn("Lower confidence interval is not constrained!")
+        # else find the time at which the chi2 crosses the sigma threshold
         else:
-            if chisq_lim_idx[0] == 0:
-                idx_lo = chisq_lim_idx[0]
-            else:
-                idx_lo = chisq_lim_idx[0] - 1
-            if chisq_lim_idx[-1] == len(self._chi2)-1:
-                idx_hi = chisq_lim_idx[-1]
-            else:
-                idx_hi = chisq_lim_idx[-1] + 1
+            idx_lo = len(lower_ci_mask) - (lower_ci_mask[::-1]).argmin() - 1
+
+        # search upper CI
+        upper_ci_mask = chi2_mask[chi2_min_idx:]
+        if np.all(~upper_ci_mask) == True:
+            idx_hi = chi2_min_idx + 1
+        elif np.all(upper_ci_mask) == True:
+            idx_hi = len(self._chi2)
+            warnings.warn("Upper confidence interval is not constrained!")
+        else:
+            idx_hi = upper_ci_mask.argmin() + chi2_min_idx
 
         # Get time lag values 
         return self._dts[idx_lo], self._dts[idx_hi]
